@@ -18,6 +18,9 @@ class CryptoService:
             str: Decrypted media URL
         """
         try:
+            if not url:
+                return ""
+
             des_cipher = des(
                 b"38346591",
                 ECB,
@@ -26,9 +29,7 @@ class CryptoService:
                 padmode=PAD_PKCS5,
             )
             enc_url = base64.b64decode(url.strip())
-            dec_url = des_cipher.decrypt(enc_url, padmode=PAD_PKCS5).decode(
-                "utf-8"
-            )
+            dec_url = des_cipher.decrypt(enc_url, padmode=PAD_PKCS5).decode("utf-8")
             return dec_url.replace("_96.mp4", "_320.mp4")
         except Exception as e:
             raise ValueError(f"URL decryption failed: {str(e)}") from e

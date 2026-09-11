@@ -12,7 +12,8 @@ A high-performance unofficial API for JioSaavn, written in Python using the Fast
 * **Language:** Python3
 * **Framework:** FastAPI
 * **Libraries:**
-    * `requests`: For making HTTP requests to the JioSaavn website.
+    * `httpx`: For making non-blocking asynchronous HTTP requests to the JioSaavn website.
+    * `cachetools`: For in-memory TTL caching of repeat queries to reduce latency.
     * `pyDes`: For decrypting encrypted media URLs.
     * `pydantic`: For data validation and serialization.
     * `fastapi`: For building the API.
@@ -34,7 +35,7 @@ This API interacts with the JioSaavn website by scraping data and utilizing undo
 
 * **FastAPI:** Chosen for its speed, ease of use, and built-in features like automatic documentation generation.
 * **pydantic:** Used for data validation and serialization, ensuring data integrity and consistency.
-* **Asynchronous Requests:**  Using `requests` to handle requests from JioSaavn Website.
+* **Asynchronous Requests:** Using `httpx.AsyncClient` with `asyncio.gather` for native, non-blocking asynchronous calls. This ensures FastAPI's event loop is never blocked, drastically reducing latency under load.
 
 ## Getting Started
 
@@ -244,6 +245,8 @@ The response will contain details about the song "Chammak Challo" from the album
 │   ├── core
 │   │   └── exceptions.py
 │   └── config.py
+├── test
+│   └── test_api.py
 ├── main.py
 ├── requirements.txt
 └── README.md
@@ -252,11 +255,12 @@ The response will contain details about the song "Chammak Challo" from the album
 
 * **`app/schemas`:** Contains Pydantic models for defining the structure of API responses.
 * **`app/services`:** Contains the core logic for interacting with the JioSaavn website and processing data.
-    * **`saavn_service.py`:**  Handles fetching and processing data from JioSaavn.
+    * **`saavn_service.py`:**  Handles fetching and processing data from JioSaavn. Features in-memory caching and graceful error fallback to prevent 500s.
     * **`crypto_service.py`:**  Handles decryption of media URLs.
 * **`app/routes`:** Defines the API endpoints and their corresponding handlers.
 * **`app/core`:** Contains modules for exception handling and other core functionalities.
 * **`app/config.py`:**  Manages application configuration settings.
+* **`test/test_api.py`:** An automated health, Telegram inline CDN verification, and concurrency benchmark suite using `aiohttp`.
 * **`main.py`:**  The main application file that creates and runs the FastAPI app.
 * **`requirements.txt`:** Lists the project dependencies.
 

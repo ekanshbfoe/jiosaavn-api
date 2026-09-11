@@ -1,6 +1,6 @@
 from typing import List, Union
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.schemas.song_schema import SongSchema
 from app.services.saavn_service import SaavnService
@@ -10,6 +10,7 @@ router = APIRouter()
 
 @router.get("/", response_model=List[Union[dict, SongSchema]])
 async def search_songs(
+    request: Request,
     query: str = Query(..., description="Search query for songs"),
     lyrics: bool = Query(False, description="Include song lyrics"),
     songdata: bool = Query(True, description="Fetch full song details"),
@@ -25,7 +26,8 @@ async def search_songs(
             status_code=400, detail="Query is required to search songs!"
         )
     try:
-        songs = SaavnService.search_songs(
+        saavn_service: SaavnService = request.app.state.saavn_service
+        songs = await saavn_service.search_songs(
             query, include_lyrics=lyrics, full_data=songdata
         )
         return songs
@@ -37,6 +39,7 @@ async def search_songs(
 
 @router.get("/get", response_model=Union[dict, SongSchema])
 async def get_song(
+    request: Request,
     song_id: str = Query(..., description="Song ID"),
     lyrics: bool = Query(False, description="Include song lyrics"),
 ):
@@ -48,7 +51,8 @@ async def get_song(
     if not song_id:
         raise HTTPException(status_code=400, detail="Song ID is required!")
     try:
-        song = SaavnService.get_song(song_id, include_lyrics=lyrics)
+        saavn_service: SaavnService = request.app.state.saavn_service
+        song = await saavn_service.get_song(song_id, include_lyrics=lyrics)
         if not song:
             raise HTTPException(status_code=404, detail="Invalid Song ID!")
         return song
