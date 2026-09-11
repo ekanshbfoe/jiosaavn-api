@@ -1,16 +1,18 @@
+import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Dict, List, Union
 
 import markdown
-import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from app.config import settings
 from app.core.exceptions import GlobalExceptionHandler
 from app.routes import album_routes, lyrics_routes, playlist_routes, song_routes
+from app.services.saavn_service import SaavnService
 
 BASE_URL = settings.SAAVN_BASE_URL
 SAAVN_URLS = [
@@ -20,6 +22,17 @@ SAAVN_URLS = [
     f"{BASE_URL}?__call=lyrics.getLyrics",
     f"{BASE_URL}?__call=autocomplete.get",
 ]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize the SaavnService and store it in app state
+    saavn_service = SaavnService()
+    await saavn_service.startup()
+    app.state.saavn_service = saavn_service
+    yield
+    # Shutdown the SaavnService
+    await saavn_service.shutdown()
 
 
 def create_app() -> FastAPI:
@@ -34,6 +47,7 @@ def create_app() -> FastAPI:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     logger = logging.getLogger(__name__)
+
     # Initialize FastAPI app
     fastapi_app = FastAPI(
         title="Saavn API",
@@ -41,7 +55,9 @@ def create_app() -> FastAPI:
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=lifespan,
     )
+
     # Add CORS middleware
     fastapi_app.add_middleware(
         CORSMiddleware,
@@ -50,10 +66,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
     # Include global exception handler
     GlobalExceptionHandler(fastapi_app)
-    # Include routers
-    
+
     @fastapi_app.get("/", response_class=HTMLResponse, tags=["Root"])
     async def read_root():
         # Path to the README file
@@ -86,28 +102,27 @@ def create_app() -> FastAPI:
 
     # Health check
     @fastapi_app.get("/ping", tags=["Health Check"])
-    async def health_check() -> (
-        Dict[str, Union[str, List[Dict[str, Union[str, bool]]]]]
-    ):
+    async def health_check(
+        request: Request,
+    ) -> Dict[str, Union[str, List[Dict[str, Union[str, bool]]]]]:
         """Health check endpoint to see if you can connect to JioSaavn."""
-        health_status = []
+        saavn_service: SaavnService = request.app.state.saavn_service
 
-        for url in SAAVN_URLS:
+        async def check_url(url):
             try:
-                response = requests.get(url, timeout=settings.REQUEST_TIMEOUT)
+                response = await saavn_service.client.get(url)
                 if response.status_code == 200:
-                    health_status.append({"url": url, "status": "ok"})
+                    return {"url": url, "status": "ok"}
                 else:
-                    health_status.append(
-                        {
-                            "url": url,
-                            "status": f"failed with code {response.status_code}",
-                        }
-                    )
-            except requests.exceptions.RequestException as e:
-                health_status.append(
-                    {"url": url, "status": f"failed with error: {str(e)}"}
-                )
+                    return {
+                        "url": url,
+                        "status": f"failed with code {response.status_code}",
+                    }
+            except Exception as e:
+                return {"url": url, "status": f"failed with error: {str(e)}"}
+
+        tasks = [check_url(url) for url in SAAVN_URLS]
+        health_status = await asyncio.gather(*tasks)
 
         overall_status = (
             "healthy"
@@ -115,17 +130,18 @@ def create_app() -> FastAPI:
             else "unhealthy"
         )
 
-        return {"msg": "Pong!", "status": overall_status, "details": health_status}
+        return {
+            "msg": "Pong!",
+            "status": overall_status,
+            "details": list(health_status),
+        }
 
-    fastapi_app.include_router(
-        song_routes.router, prefix="/song", tags=["Songs"])
-    fastapi_app.include_router(
-        album_routes.router, prefix="/album", tags=["Albums"])
+    fastapi_app.include_router(song_routes.router, prefix="/song", tags=["Songs"])
+    fastapi_app.include_router(album_routes.router, prefix="/album", tags=["Albums"])
     fastapi_app.include_router(
         playlist_routes.router, prefix="/playlist", tags=["Playlists"]
     )
-    fastapi_app.include_router(
-        lyrics_routes.router, prefix="/lyrics", tags=["Lyrics"])
+    fastapi_app.include_router(lyrics_routes.router, prefix="/lyrics", tags=["Lyrics"])
 
     logger.info("Application initialized successfully")
     return fastapi_app
